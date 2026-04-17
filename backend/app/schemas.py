@@ -34,3 +34,15 @@ class RecommendResponse(BaseModel):
     mode: str
     confidence: float
     tracks: list[TrackItem]
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=500)
+    n: int = Field(5, ge=1, le=20)
+    session_id: str = Field(..., min_length=1, max_length=100)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    mood: str
+    tracks: list[TrackItem]

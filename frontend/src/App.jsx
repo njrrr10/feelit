@@ -1,43 +1,75 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function App() {
-  const [text, setText] = useState("");
-  const [result, setResult] = useState(null);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      text: "Hi, I’m Feelit. Tell me how you feel and I’ll recommend music for you.",
+      mood: null,
+      tracks: [],
+    },
+  ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sessionId, setSessionId] = useState("");
 
-  const handleRecommend = async () => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    const generatedSessionId =
+      "session_" + Math.random().toString(36).slice(2, 11);
+    setSessionId(generatedSessionId);
+  }, []);
 
+  const handleSend = async () => {
+    if (!input.trim() || !sessionId) return;
+
+    const userMessage = {
+      role: "user",
+      text: input,
+      mood: null,
+      tracks: [],
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
     setError("");
-    setResult(null);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/recommend", {
+      const res = await fetch("http://127.0.0.1:8000/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, n: 12 }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: input,
+          n: 6,
+          session_id: sessionId,
+        }),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data) {
         setError(`Backend error (${res.status})`);
+        setLoading(false);
         return;
       }
 
-      setResult(data);
+      const botMessage = {
+        role: "assistant",
+        text: data.reply,
+        mood: data.mood,
+        tracks: data.tracks || [],
+      };
+
+      setMessages((prev) => [...prev, botMessage]);
+      setInput("");
     } catch (e) {
       setError("Failed to connect to backend");
     } finally {
       setLoading(false);
     }
   };
-
-  const moodTitle = result?.mood
-    ? result.mood.charAt(0).toUpperCase() + result.mood.slice(1)
-    : "";
 
   return (
     <div style={styles.page}>
@@ -48,131 +80,164 @@ function App() {
             <span style={styles.brandText}>Feelit</span>
           </div>
           <div style={styles.subtitle}>
-            Mood-based music recommendations powered by AI
+            AI chat for mood-based music recommendations
           </div>
         </header>
 
-        <div style={styles.searchRow}>
-          <input
-            style={styles.input}
-            placeholder="Type how you feel..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRecommend();
-            }}
-          />
-
-          <button
-            type="button"
-            style={{
-              ...styles.button,
-              opacity: loading ? 0.9 : 1,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
-            onClick={handleRecommend}
-            disabled={loading}
-          >
-            {loading ? "Loading..." : "Recommend"}
-          </button>
-        </div>
-
-        {error && <div style={styles.error}>{error}</div>}
-
-        {result && (
-          <section style={styles.results}>
-            <div style={styles.resultsHeader}>
-              <div style={styles.resultsTitle}>
-                Recommended for: <span style={styles.moodChip}>{moodTitle}</span>
-              </div>
-              <div style={styles.resultsMeta}>
-                {result.tracks?.length || 0} tracks
-              </div>
-            </div>
-
-            <div style={styles.grid}>
-              {result.tracks?.map((track, i) => (
+        <div style={styles.chatWrapper}>
+          <div style={styles.chatArea}>
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                style={
+                  msg.role === "user"
+                    ? styles.userMessageWrapper
+                    : styles.botMessageWrapper
+                }
+              >
                 <div
-                  key={i}
-                  style={styles.card}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translateY(-4px)";
-                    e.currentTarget.style.boxShadow =
-                      "0 18px 40px rgba(0,0,0,0.45)";
-                    e.currentTarget.style.border =
-                      "1px solid rgba(29,185,84,0.35)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow =
-                      "0 10px 30px rgba(0,0,0,0.35)";
-                    e.currentTarget.style.border =
-                      "1px solid rgba(255,255,255,0.10)";
-                  }}
+                  style={
+                    msg.role === "user" ? styles.userBubble : styles.botBubble
+                  }
                 >
-                  <div style={styles.imageWrapper}>
-                    {track.image_url ? (
-                      <img
-                        src={track.image_url}
-                        alt={`${track.name} cover`}
-                        style={styles.coverImage}
-                      />
-                    ) : (
-                      <div style={styles.imageFallback}>♪</div>
-                    )}
-                  </div>
+                  <div style={styles.messageText}>{msg.text}</div>
 
-                  <div style={styles.cardBody}>
-                    <div style={styles.trackName}>{track.name}</div>
-                    <div style={styles.artistName}>{track.artist}</div>
-
-                    <div style={styles.metaRow}>
-                      <span style={styles.metaText}>
-                        Popularity: {track.popularity}
+                  {msg.mood && (
+                    <div style={styles.moodLine}>
+                      Recommended mood:{" "}
+                      <span style={styles.moodChip}>
+                        {msg.mood.charAt(0).toUpperCase() + msg.mood.slice(1)}
                       </span>
                     </div>
+                  )}
 
-                    <div style={styles.actionsRow}>
-                      {track.spotify_url && (
-                        <a
-                          href={track.spotify_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={styles.spotifyLink}
+                  {msg.tracks && msg.tracks.length > 0 && (
+                    <div style={styles.trackGrid}>
+                      {msg.tracks.map((track, i) => (
+                        <div
+                          key={i}
+                          style={styles.card}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-4px)";
+                            e.currentTarget.style.boxShadow =
+                              "0 18px 40px rgba(0,0,0,0.45)";
+                            e.currentTarget.style.border =
+                              "1px solid rgba(29,185,84,0.35)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow =
+                              "0 10px 30px rgba(0,0,0,0.35)";
+                            e.currentTarget.style.border =
+                              "1px solid rgba(255,255,255,0.10)";
+                          }}
                         >
-                          Open in Spotify
-                        </a>
-                      )}
-                    </div>
+                          <div style={styles.imageWrapper}>
+                            {track.image_url ? (
+                              <img
+                                src={track.image_url}
+                                alt={`${track.name} cover`}
+                                style={styles.coverImage}
+                              />
+                            ) : (
+                              <div style={styles.imageFallback}>♪</div>
+                            )}
+                          </div>
 
-                    {track.preview_url ? (
-                      <audio
-                        style={styles.audio}
-                        controls
-                        preload="none"
-                        src={track.preview_url}
-                        onPlay={(e) => {
-                          const audio = e.currentTarget;
-                          if (audio._stopTimer) clearTimeout(audio._stopTimer);
-                          audio._stopTimer = setTimeout(() => {
-                            audio.pause();
-                            audio.currentTime = 0;
-                          }, 10000);
-                        }}
-                        onPause={(e) => {
-                          const audio = e.currentTarget;
-                          if (audio._stopTimer) clearTimeout(audio._stopTimer);
-                        }}
-                      />
-                    ) : (
-                      <div style={styles.noPreview}>Preview unavailable</div>
-                    )}
-                  </div>
+                          <div style={styles.cardBody}>
+                            <div style={styles.trackName}>{track.name}</div>
+                            <div style={styles.artistName}>{track.artist}</div>
+
+                            <div style={styles.metaRow}>
+                              <span style={styles.metaText}>
+                                Popularity: {track.popularity}
+                              </span>
+                            </div>
+
+                            <div style={styles.actionsRow}>
+                              {track.spotify_url && (
+                                <a
+                                  href={track.spotify_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={styles.spotifyLink}
+                                >
+                                  Open in Spotify
+                                </a>
+                              )}
+                            </div>
+
+                            {track.preview_url ? (
+                              <audio
+                                style={styles.audio}
+                                controls
+                                preload="none"
+                                src={track.preview_url}
+                                onPlay={(e) => {
+                                  const audio = e.currentTarget;
+                                  if (audio._stopTimer) {
+                                    clearTimeout(audio._stopTimer);
+                                  }
+                                  audio._stopTimer = setTimeout(() => {
+                                    audio.pause();
+                                    audio.currentTime = 0;
+                                  }, 10000);
+                                }}
+                                onPause={(e) => {
+                                  const audio = e.currentTarget;
+                                  if (audio._stopTimer) {
+                                    clearTimeout(audio._stopTimer);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div style={styles.noPreview}>
+                                Preview unavailable
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
+              </div>
+            ))}
+
+            {loading && (
+              <div style={styles.botMessageWrapper}>
+                <div style={styles.botBubble}>Thinking...</div>
+              </div>
+            )}
+
+            {error && <div style={styles.error}>{error}</div>}
+          </div>
+
+          <div style={styles.inputBar}>
+            <input
+              style={styles.input}
+              placeholder="Tell me how you feel..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSend();
+              }}
+            />
+
+            <button
+              type="button"
+              style={{
+                ...styles.button,
+                opacity: loading ? 0.85 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+              onClick={handleSend}
+              disabled={loading}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -191,7 +256,7 @@ const styles = {
     width: "100%",
     maxWidth: "1400px",
     margin: "0 auto",
-    padding: "36px 28px 70px",
+    padding: "28px 28px 40px",
   },
 
   header: {
@@ -220,85 +285,82 @@ const styles = {
     fontSize: 16,
   },
 
-  searchRow: {
+  chatWrapper: {
     display: "flex",
-    gap: 12,
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginBottom: 24,
+    flexDirection: "column",
+    gap: 16,
   },
 
-  input: {
-    flex: "1 1 520px",
-    minWidth: 260,
-    padding: "15px 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(2,6,23,0.55)",
-    color: "white",
-    fontSize: 16,
-    outline: "none",
+  chatArea: {
+    minHeight: "65vh",
+    background: "rgba(17,24,39,0.45)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 20,
+    padding: 18,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    backdropFilter: "blur(6px)",
+    overflow: "hidden",
   },
 
-  button: {
-    padding: "15px 20px",
-    minWidth: 150,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.18)",
+  userMessageWrapper: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: 14,
+  },
+
+  botMessageWrapper: {
+    display: "flex",
+    justifyContent: "flex-start",
+    marginBottom: 14,
+  },
+
+  userBubble: {
+    maxWidth: "75%",
     background: "#1DB954",
     color: "white",
-    fontWeight: 800,
+    borderRadius: 18,
+    padding: "14px 16px",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
   },
 
-  error: {
-    marginBottom: 18,
-    padding: "12px 14px",
-    borderRadius: 12,
-    background: "rgba(239,68,68,0.12)",
-    border: "1px solid rgba(239,68,68,0.25)",
-    color: "#fecaca",
+  botBubble: {
+    width: "100%",
+    background: "rgba(2,6,23,0.65)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 18,
+    padding: "16px 16px",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
   },
 
-  results: {
-    marginTop: 20,
+  messageText: {
+    fontSize: 15,
+    lineHeight: 1.5,
   },
 
-  resultsHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-    gap: 12,
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
-
-  resultsTitle: {
-    fontSize: 22,
-    fontWeight: 800,
+  moodLine: {
+    marginTop: 14,
+    fontSize: 14,
+    opacity: 0.9,
   },
 
   moodChip: {
     display: "inline-block",
-    marginLeft: 10,
-    padding: "5px 12px",
+    marginLeft: 8,
+    padding: "4px 10px",
     borderRadius: 999,
-    background: "rgba(29,185,84,0.16)",
+    background: "rgba(29,185,84,0.18)",
     border: "1px solid rgba(29,185,84,0.35)",
     color: "#86efac",
-    fontSize: 14,
     fontWeight: 800,
+    fontSize: 13,
   },
 
-  resultsMeta: {
-    opacity: 0.65,
-    fontSize: 14,
-  },
-
-  grid: {
+  trackGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-    gap: 18,
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 16,
     width: "100%",
+    marginTop: 18,
   },
 
   card: {
@@ -307,13 +369,12 @@ const styles = {
     borderRadius: 18,
     overflow: "hidden",
     boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-    backdropFilter: "blur(6px)",
     transition: "all 0.2s ease",
   },
 
   imageWrapper: {
     width: "100%",
-    height: 220,
+    height: 190,
     background: "rgba(255,255,255,0.04)",
   },
 
@@ -335,20 +396,20 @@ const styles = {
   },
 
   cardBody: {
-    padding: 18,
+    padding: 16,
   },
 
   trackName: {
     fontWeight: 900,
-    fontSize: 18,
+    fontSize: 17,
     lineHeight: 1.25,
     marginBottom: 6,
   },
 
   artistName: {
     opacity: 0.78,
-    fontSize: 15,
-    marginBottom: 14,
+    fontSize: 14,
+    marginBottom: 12,
   },
 
   metaRow: {
@@ -368,6 +429,7 @@ const styles = {
     color: "#1DB954",
     fontWeight: 800,
     fontSize: 14,
+    textDecoration: "none",
   },
 
   audio: {
@@ -379,6 +441,42 @@ const styles = {
     opacity: 0.6,
     fontSize: 13,
     marginTop: 6,
+  },
+
+  inputBar: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+  },
+
+  input: {
+    flex: 1,
+    padding: "15px 16px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(2,6,23,0.55)",
+    color: "white",
+    fontSize: 16,
+    outline: "none",
+  },
+
+  button: {
+    padding: "15px 22px",
+    minWidth: 120,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "#1DB954",
+    color: "white",
+    fontWeight: 800,
+  },
+
+  error: {
+    marginTop: 12,
+    padding: "12px 14px",
+    borderRadius: 12,
+    background: "rgba(239,68,68,0.12)",
+    border: "1px solid rgba(239,68,68,0.25)",
+    color: "#fecaca",
   },
 };
 
